@@ -1,6 +1,8 @@
 library(tidyverse)
 library(tidygraph)
 library(ggraph)
+library(visNetwork)
+library(RColorBrewer)
 
 #clean data from extracted from google bigquery
 data <- as_tibble(
@@ -93,8 +95,88 @@ contracted_graph <- filtered_graph %>%
 contracted_graph
 
 #graph network
-ggraph(contracted_graph, layout = 'igraph', algorithm = 'kk') +
+network_graph <- ggraph(contracted_graph, layout = 'igraph', algorithm = 'kk') +
   geom_edge_link(aes(edge_alpha = contracted_weight, edge_colour = contracted_amount)) +
   scale_edge_colour_continuous(high = '#000000', low = '#56B1F7') +
   geom_node_point(aes(size = sqrt(community_size), colour = centrality_degree())) +
   scale_colour_continuous(high = '#000000', low = '#56B1F7')
+
+network_graph
+
+#subset graph on value transacted to visualize high value connections (and importantly, visualize readable labels)
+
+subset_graph <- contracted_graph %>%
+  activate(edges) %>%
+  top_n(50, contracted_amount) %>%
+  activate(nodes) %>%
+  filter(!node_is_isolated())
+
+subset_graph
+
+subset_network_graph <- ggraph(subset_graph, layout = 'igraph', algorithm = 'kk') +
+  geom_edge_link(aes(edge_alpha = contracted_weight, edge_colour = contracted_amount)) +
+  scale_edge_colour_continuous(high = '#000000', low = '#56B1F7') +
+  geom_node_point(aes(size = sqrt(community_size), colour = centrality_degree())) +
+  scale_colour_continuous(high = '#000000', low = '#56B1F7') +
+  geom_node_text(aes(label = community), position = position_nudge(x = 0.2, y = 0.2))
+
+subset_network_graph
+
+#graph community 56
+
+community_56_graph <- graph %>%
+  activate(nodes) %>%
+  filter(community == 56) %>%
+  activate(edges) %>%
+  filter(amount > quantile(amount, 0.99)) %>%
+  activate(nodes) %>%
+  filter(!node_is_isolated())
+
+community_56_graph
+
+community_56_network_graph <- ggraph(community_56_graph, layout = 'igraph', algorithm = 'graphopt') +
+  geom_edge_link(color = 'sky blue') +
+  geom_node_point(aes(size = sqrt(centrality)))
+
+community_56_network_graph
+
+#prepare data for visualization of community 56 in order to display addresses (sender) in a readable way
+
+#create color palette for groups
+palette <- as_tibble(brewer.pal(6, 'Set3'))
+
+palette
+
+vis_edge_list <- community_56_graph %>%
+  activate(edges) %>%
+  arrange(desc(to)) %>%
+  as_tibble() %>%
+  mutate(arrows = 'to') %>%
+  rename(title = amount, value = weight)
+
+vis_edge_list
+
+vis_node_list <- community_56_graph %>%
+  activate(nodes) %>%
+  mutate(grouping = group_infomap()) %>%
+  as_tibble() %>%
+  select(-id, -community) %>%
+  rowid_to_column('id') %>%
+  rename(title = sender, value = centrality) %>%
+  mutate(label = "", color = case_when(grouping == 1 ~ '#FB8072',
+                                       grouping == 2 ~ '#FFFFB3',
+                                       grouping == 3 ~ '#BEBADA',
+                                       grouping == 4 ~ '#8DD3C7',
+                                       grouping == 5 ~ '#80B1D3',
+                                       grouping == 6 ~ '#FDB462'))
+
+vis_node_list
+
+#graph dynamic network with prepared data
+dynamic_network_graph <- visNetwork(vis_node_list, vis_edge_list, main = 
+                                    "Transaction Network of Top 1% Most Influential Addresses Using DAI") %>%
+  visOptions(highlightNearest = list(enabled = TRUE, degree = list(from = 0, to = 1))) %>%
+  visInteraction(dragView = FALSE) %>%
+  visLayout(randomSeed = 11)
+
+dynamic_network_graph
