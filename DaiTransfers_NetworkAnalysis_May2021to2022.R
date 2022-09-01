@@ -180,3 +180,5 @@ dynamic_network_graph <- visNetwork(vis_node_list, vis_edge_list, main =
   visLayout(randomSeed = 11)
 
 dynamic_network_graph
+
+visSave(dynamic_network_graph, "Most_Influential_Addresses_Using_Dai_Network_Graph.html")
